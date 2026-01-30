@@ -4,10 +4,22 @@ import re
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 #  CONFIGURATION
-MODEL_PATH = "./Qwen2.5-0.5B-Router/checkpoint-600"  # <<< UPDATED to new model directory
+MODEL_PATH = "My_model_name"  
 DB_FILE = "data.json"
+ENTITY_MAP = {}
 
 #  HELPER FUNCTIONS
+def build_entity_map(db):
+    """Builds a lookup table from canonical names and aliases to the canonical name."""
+    global ENTITY_MAP
+    for canonical_name, data in db.items():
+        # Add the canonical name itself (e.g., "Rajgad Fort")
+        ENTITY_MAP[canonical_name.lower()] = canonical_name
+        # Add all aliases
+        if 'aliases' in data:
+            for alias in data['aliases']:
+                ENTITY_MAP[alias.lower()] = canonical_name
+
 def load_resources():
     """Loads the fine-tuned model, tokenizer, and JSON database."""
     print(f"🔄 Loading model from {MODEL_PATH}...")
@@ -15,11 +27,14 @@ def load_resources():
         # Load the tokenizer and model from the specified path
         tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
         model = AutoModelForCausalLM.from_pretrained(MODEL_PATH)
-        
+
         # Load the knowledge base
         with open(DB_FILE, "r", encoding="utf-8") as f:
             db = json.load(f)
-            
+
+        # Build the entity map for normalization
+        build_entity_map(db)
+
         print("✅ System Ready!")
         return tokenizer, model, db
     except Exception as e:
@@ -29,19 +44,23 @@ def load_resources():
 
 def normalize_entity(raw_name):
     """
-    Translates various user inputs or model outputs into a canonical database key.
-    This makes the lookup process robust to spelling variations or nicknames.
+    Translates various user inputs or model outputs into a canonical database key
+    by looking it up in the pre-built ENTITY_MAP.
     """
-    if not raw_name: return None
+    if not raw_name:
+        return None
+    
     n = raw_name.lower().strip("'\" -")
     
-    if "rajgad" in n or "raja" in n or "murumbdev" in n:
-        return "Rajgad Fort"
-    if "torna" in n or "prachandagad" in n:
-        return "Torna Fort"
-    if "parvati" in n or "tekdi" in n:
-        return "Parvati Hill"
+    # Check for a direct match in the map first
+    if n in ENTITY_MAP:
+        return ENTITY_MAP[n]
         
+
+    for key_alias, canonical_name in ENTITY_MAP.items():
+        if n in key_alias:
+            return canonical_name
+            
     return None
 
 def parse_command(text):
